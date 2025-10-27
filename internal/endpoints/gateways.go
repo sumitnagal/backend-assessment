@@ -133,54 +133,61 @@ func (h *GatewayHandler) GetGateway(w http.ResponseWriter, r *http.Request) {
 
 // UpdateGateway updates a gateway
 func (h *GatewayHandler) UpdateGateway(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	gatewayID := vars["id"]
+    vars := mux.Vars(r)
+    gatewayID := vars["id"]
 
-	userID := r.Header.Get("X-User-ID")
-	if userID == "" {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
+    userID := r.Header.Get("X-User-ID")
+    if userID == "" {
+        http.Error(w, "Unauthorized", http.StatusUnauthorized)
+        return
+    }
 
-	var updateData map[string]interface{}
-	if err := json.NewDecoder(r.Body).Decode(&updateData); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
-		return
-	}
+    // Strictly decode into a typed payload to avoid dynamic field-name injection
+    type GatewayUpdateRequest struct {
+        Name     *string `json:"name"`
+        Location *string `json:"location"`
+    }
 
-	// Build dynamic update query (simplified)
-	setParts := []string{}
-	args := []interface{}{}
-	argIndex := 1
+    var body GatewayUpdateRequest
+    if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+        http.Error(w, "Invalid JSON", http.StatusBadRequest)
+        return
+    }
 
-	for field, value := range updateData {
-		// Basic validation (incomplete)
-		if field == "name" || field == "location" {
-			setParts = append(setParts, fmt.Sprintf("%s = $%d", field, argIndex))
-			args = append(args, value)
-			argIndex++
-		}
-	}
+    // Build SET clause from a fixed allowlist of columns
+    setParts := []string{}
+    args := []interface{}{}
+    argIndex := 1
 
-	if len(setParts) == 0 {
-		http.Error(w, "No valid fields to update", http.StatusBadRequest)
-		return
-	}
+    if body.Name != nil {
+        setParts = append(setParts, fmt.Sprintf("name = $%d", argIndex))
+        args = append(args, *body.Name)
+        argIndex++
+    }
+    if body.Location != nil {
+        setParts = append(setParts, fmt.Sprintf("location = $%d", argIndex))
+        args = append(args, *body.Location)
+        argIndex++
+    }
 
-	// Note: In production, should verify user has access to this organization's gateway
-	query := fmt.Sprintf("UPDATE gateways SET %s WHERE id = $%d", 
-		strings.Join(setParts, ", "), argIndex)
-	args = append(args, gatewayID)
+    if len(setParts) == 0 {
+        http.Error(w, "No valid fields to update", http.StatusBadRequest)
+        return
+    }
 
-	_, err := h.db.Exec(context.Background(), query, args...)
-	if err != nil {
-		log.Errorf("Failed to update gateway: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return
-	}
+    // Note: In production, should verify user has access to this organization's gateway
+    query := fmt.Sprintf("UPDATE gateways SET %s WHERE id = $%d", strings.Join(setParts, ", "), argIndex)
+    args = append(args, gatewayID)
 
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status":"updated"}`))
+    _, err := h.db.Exec(context.Background(), query, args...)
+    if err != nil {
+        log.Errorf("Failed to update gateway: %v", err)
+        http.Error(w, "Internal server error", http.StatusInternalServerError)
+        return
+    }
+
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte(`{"status":"updated"}`))
 }
 
 // RebootGateway sends a reboot command to a gateway
