@@ -1,0 +1,253 @@
+openapi: 3.1.0
+info:
+  title: Backend Assessment API
+  version: 1.0.0
+  description: REST API for IoT gateway, user, and organization management.
+servers:
+  - url: http://localhost:8080
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+  /v1/gateways:
+    get:
+      summary: List gateways
+      parameters:
+        - in: header
+          name: X-User-ID
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: search
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list of gateways
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Gateway'
+        '401':
+          description: Unauthorized
+  /v1/gateways/{id}:
+    get:
+      summary: Get gateway by ID
+      parameters:
+        - in: header
+          name: X-User-ID
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Gateway
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Gateway'
+        '404':
+          description: Not Found
+        '401':
+          description: Unauthorized
+    put:
+      summary: Update gateway
+      parameters:
+        - in: header
+          name: X-User-ID
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                location:
+                  type: string
+      responses:
+        '200':
+          description: Updated
+        '400':
+          description: Bad request
+        '401':
+          description: Unauthorized
+  /v1/gateways/{id}/reboot:
+    post:
+      summary: Reboot a gateway
+      parameters:
+        - in: header
+          name: X-User-ID
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Reboot initiated
+        '401':
+          description: Unauthorized
+  /v1/users:
+    get:
+      summary: List users
+      parameters:
+        - in: header
+          name: X-User-ID
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+        '401':
+          description: Unauthorized
+  /v1/users/{id}:
+    get:
+      summary: Get user by ID
+      parameters:
+        - in: header
+          name: X-User-ID
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: User
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '404':
+          description: Not Found
+        '401':
+          description: Unauthorized
+  /v1/organizations:
+    get:
+      summary: List organizations
+      parameters:
+        - in: header
+          name: X-User-ID
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A list of organizations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Organization'
+        '401':
+          description: Unauthorized
+components:
+  schemas:
+    Gateway:
+      type: object
+      properties:
+        id:
+          type: string
+        serial:
+          type: string
+        organization_id:
+          type: string
+        site_id:
+          type: string
+        name:
+          type: string
+        health_status:
+          type: string
+          enum: [healthy, warning, critical, offline]
+        last_seen:
+          type: string
+          format: date-time
+        version:
+          type: string
+        ip_address:
+          type: string
+        location:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        organization_id:
+          type: string
+        role:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Organization:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        settings:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
