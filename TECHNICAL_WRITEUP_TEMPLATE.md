@@ -1,13 +1,54 @@
 # IoT Platform Backend Assessment - Technical Writeup
 
-**Candidate Name:** [Your Name]  
+**Candidate Name:** [Sumit Nagal]  
 **Date:** [Submission Date]  
-**Assessment Duration:** [Total time spent]
+**Assessment Duration:** [6-8 hours]
 
 ## Executive Summary
 *Provide a concise overview (300-400 words) of your approach to the assessment, key challenges encountered, and the overall solution architecture you implemented.*
 
 ---
+##0 A Few Handy things 
+
+### 0.0 understand project and created postman collectin 
+
+* created a postmand collection *
+* setup the DB *
+* Added launch.json for debugging and running * 
+* executed psql command after connecting local postgres * 
+
+
+
+### 0.1 how to fix make docs 
+```bash
+docs:
+	@echo "Validating OpenAPI spec..."
+	@test -f docs/openapi.yaml || (echo "docs/openapi.yaml not found" && exit 1)
+	@echo "OpenAPI spec present at docs/openapi.yaml"
+
+serve-docs:
+	@echo "Serving docs at http://localhost:8081"
+	@which python3 >/dev/null 2>&1 || (echo "python3 not found" && exit 1)
+	cd docs && python3 -m http.server 8081
+```
+* http://localhost:8081 * 
+
+### 0.2 Added Tests 
+* Across the project *
+```bash
+go test ./internal/endpoints -v
+go test ./applications/messageprocessor -v
+go test ./applications/edgehealth -v
+go test ./applications/messageprocessor -v
+```
+
+### 0.3 Added load test - how to run the worker under load
+* worked load cli , script and makfile alon with tests *
+```bash
+./bin/cli worker-load --rate 500 --duration 60 --queue 20000 --worker 1
+```
+
+
 
 ## 1. Critical Bug Fixes
 
@@ -22,13 +63,29 @@
 
 **Solution Implemented:**
 *Detail your security fix, including validation logic and safeguards added.*
+* Implemented in gateway *
+```bash
+var (
+    gatewayCache   = make(map[string][]models.Gateway)
+    gatewayCacheMu sync.RWMutex
+)
+```
+```bash
+	gatewayCacheMu.RLock()
+	cached, exists := gatewayCache[cacheKey]
+	gatewayCacheMu.RUnlock()
+```
 
 **Testing Approach:**
 *How did you verify the fix prevents the original vulnerability?*
 
 **Security Impact:**
 *Assess the severity and potential business impact of this vulnerability.*
-
+* Executed in two 
+```bash
+seq 1 50 | xargs -P 20 -I{} curl -sS -H 'X-User-ID: test' 'http://localhost:8080/v1/gateways?search=a' >/dev/null
+seq 1 50 | xargs -P 20 -I{} curl -sS -H 'X-User-ID: test' 'http://localhost:8080/v1/gateways?search=a' >/dev/null
+```
 ---
 
 ### Bug 2: Memory Leak in Message Processor
@@ -36,23 +93,45 @@
 
 **Problem Description:**
 *Describe the resource management issue causing memory leaks.*
-
+* we are not releasing the connection * 
 **Root Cause Analysis:**
 *Explain the connection handling problem and why resources weren't being freed.*
 
 **Solution Implemented:**
 *Detail your resource cleanup approach and connection management strategy.*
+Added 
+```bash
+type DB interface {
+    Acquire(ctx context.Context) (Conn, error)
+}
+
+// Conn abstracts a single connection acquired from the DB pool
+type Conn interface {
+    Exec(ctx context.Context, sql string, args ...interface{}) error
+    Release()
+}
+```
+
+```bash
+defer conn.Release() 
+```
 
 **Testing Approach:**
 *How did you verify the memory leak was resolved? Include any profiling data.*
+* Added load test * 
 
 **Performance Impact:**
 *Quantify the performance improvement achieved.*
-
+* no issue running a higher load * 
+```bash
+./bin/cli worker-load --rate 500 --duration 60 --queue 20000 --worker 1
+./bin/cli worker-load --rate 500 --duration 60 --queue 20000 --worker 2
+```
 ---
 
 ### Bug 3: Deadlock in Health Monitoring
 **Location:** `applications/edgehealth/processor.go`
+* it has unsafe concurrent access (data races) and will panic under load * 
 
 **Problem Description:**
 *Describe the concurrency issue causing deadlocks.*
@@ -62,9 +141,31 @@
 
 **Solution Implemented:**
 *Detail your synchronization strategy and concurrency safety measures.*
+```bash
+mu            sync.RWMutex
+```
+```bash
+	p.mu.Lock()
+	if p.pendingChecks[gatewayID] {
+		p.mu.Unlock()
+		return
+	}
+```
+```bash
+	p.mu.Lock()
+	delete(p.pendingChecks, gatewayID)
+	p.mu.Unlock()
+```
+
 
 **Testing Approach:**
 *How did you test for race conditions and deadlock prevention?*
+* Executed in two 
+```bash
+seq 1 50 | xargs -P 20 -I{} curl -sS -H 'X-User-ID: test' 'http://localhost:8080/v1/gateways?search=a' >/dev/null
+seq 1 50 | xargs -P 20 -I{} curl -sS -H 'X-User-ID: test' 'http://localhost:8080/v1/gateways?search=a' >/dev/null
+```
+
 
 ---
 
@@ -73,19 +174,37 @@
 
 **Problem Description:**
 *Describe the SQL injection attack vector you identified.*
+```bash
+query := fmt.Sprintf("UPDATE gateways SET %s WHERE id = $%d", 
+```
+
 
 **Root Cause Analysis:**
 *Explain how user input was being improperly handled in SQL queries.*
+* Update might updae other fields, hence added this code *
 
 **Solution Implemented:**
 *Detail your input sanitization and parameterized query approach.*
+```bash
+query := "UPDATE gateways SET name = COALESCE($1, name), location = COALESCE($2, location) WHERE id = $3"
+```
 
 **Testing Approach:**
 *How did you verify protection against SQL injection attacks?*
-
+* try to update other field* 
+```bash
+curl -s -H 'Content-Type: application/json' -H 'X-User-ID: test' \
+  -X PUT http://localhost:8080/v1/gateways/30000000-0000-0000-0000-000000000001 \
+  -d '{"name":"safe-name\", health_status=\'unhealthy --"}'
+```
+* try to delete table *
+```bash
+curl -s -H 'Content-Type: application/json' -H 'X-User-ID: test' -X PUT http://localhost:8080/v1/gateways/30000000-0000-0000-0000-000000000001 -d '{"location":"x\"); DROP TABLE gateways; --"}'  
+-- {"status":"updated"}%                                                                           
+```
 ---
 
-## 2. API Feature Implementation
+## 2. API Feature Implementation 
 
 ### Gateway Bulk Operations API
 **Endpoints Implemented:**
@@ -145,6 +264,21 @@
 **OpenTelemetry Integration:**
 *Describe your tracing instrumentation approach.*
 
+```bash
+# Start Jaeger
+docker-compose up -d jaeger
+
+# Run server with tracing env vars
+export TRACING_ENABLED=true
+export JAEGER_ENDPOINT=http://127.0.0.1:14268/api/traces
+export SERVICE_NAME=backend-assessment
+export ENVIRONMENT=dev
+make run
+
+# Open Jaeger UI
+open http://localhost:16686
+```
+
 **Trace Context Propagation:**
 *How do traces flow across service boundaries?*
 
@@ -159,6 +293,14 @@
 ### Rate Limiting & Circuit Breaker
 **Rate Limiting Strategy:**
 *Explain your per-user rate limiting implementation.*
+```bash 
+export RATE_LIMIT_RPM=600     # tokens per minute per user
+export RATE_LIMIT_BURST=50    # burst tokens per user
+export CB_FAILURE_THRESHOLD=5 # opens after 5 consecutive failures
+export CB_RESET_TIMEOUT_SEC=30
+```
+
+* Than execute the setup *
 
 **Circuit Breaker Design:**
 *Describe your circuit breaker configuration and triggers.*
@@ -168,6 +310,9 @@
 
 **Reliability Metrics:**
 *What metrics track system reliability?*
+```bash 
+curl http://localhost:8080/debug/vars | jq '.rate_limit_dropped'
+```
 
 ---
 

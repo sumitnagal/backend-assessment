@@ -6,3 +6,4 @@ coverage/*
 .vscode/*
 bin/cli
 bin/server
+.cursor/*
