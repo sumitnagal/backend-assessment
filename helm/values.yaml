@@ -1,0 +1,47 @@
+namespace: backend-assessment
+
+image:
+  repository: backend-assessment
+  tag: latest
+  pullPolicy: IfNotPresent
+
+replicaCount: 3
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+ingress:
+  enabled: true
+  className: nginx
+  host: backend-assessment.local
+
+env:
+  PORT: "8080"
+  LOG_LEVEL: "info"
+  TRACING_ENABLED: "true"
+  JAEGER_ENDPOINT: "http://jaeger-collector.monitoring:14268/api/traces"
+  SERVICE_NAME: "backend-assessment"
+  ENVIRONMENT: "dev"
+
+databaseURLSecret:
+  name: backend-assessment-secrets
+  database_url: postgres://postgres:postgres@postgres.postgres:5432/backend_assessment?sslmode=disable
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+hpa:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  cpu: 60
+  memory: 70
+
+
